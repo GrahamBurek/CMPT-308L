@@ -56,9 +56,9 @@ WHERE  city IN (SELECT city
                 FROM   products             
                 GROUP BY city
                 HAVING count(city) = (SELECT min(fewest)
-                                      FROM   (SELECT city ,count(city) AS fewest
-                                              FROM products
+                                      FROM   (SELECT count(city) AS fewest
+                                              FROM   products
                                               GROUP BY city
-                                             )AS countCity
+                                             )AS     countCity
                                     )
                );
