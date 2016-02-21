@@ -27,7 +27,7 @@ WHERE city NOT IN ('New York', 'Tokyo');
 -- 6. List all data for products not in Dallas or Duluth that cost US$1 or more.
 SELECT *
 FROM products
-WHERE city NOT IN ('Dallas', 'Duluth') AND priceusd => 1.00;
+WHERE city NOT IN ('Dallas', 'Duluth') AND priceusd >= 1.00;
 
 -- 7. List all data for orders in January or March.
 SELECT *
