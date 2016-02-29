@@ -29,15 +29,21 @@ WHERE priceusd > (SELECT avg(priceusd)
                  )
 ORDER BY name DESC;
 
---3. Display the customer name, pid ordered, and the total for all orders, sorted by total 
---from high to low.         
---This query shows customer name, a product pid they ordered, and the total for all the orders of this product that
+-- 3. Display the customer name, pid ordered, and the total for all orders, sorted by total 
+-- from high to low.         
+-- This query shows customer name, a product pid they ordered, and the total for all the orders of this product that
 -- customer made (not sure if this is the query you are looking for).
 
 SELECT customers.name, pid, sum(totalusd) AS totalProductAmount
 FROM orders INNER JOIN customers ON orders.cid = customers.cid
 GROUP BY  customers.name, pid
 ORDER BY  totalProductAmount DESC;
+
+-- Alternatively, this query shows the totalUSD, name, pid for all the customers:
+
+SELECT customers.name, pid, totalUSD
+FROM   customers INNER JOIN orders ON customers.cid = orders.cid
+ORDER BY totalUSD DESC;
 
 -- 4. Display all customer names (in alphabetical order) and their total ordered, and 
 -- nothing more. Use coalesce to avoid showing NULLs.
@@ -58,17 +64,17 @@ FROM   customers c INNER JOIN orders o   ON o.cid = c.cid
 WHERE a.city = 'Tokyo';
 
 
---6. Write a query to check the accuracy of the dollars column in the Orders table. This 
---means calculating Orders.totalUSD from data in other tables and comparing those 
---values to the values in Orders.totalUSD. Display all rows in Orders where 
---Orders.totalUSD is incorrect, if any. 
+-- 6. Write a query to check the accuracy of the dollars column in the Orders table. This 
+-- means calculating Orders.totalUSD from data in other tables and comparing those 
+-- values to the values in Orders.totalUSD. Display all rows in Orders where 
+-- Orders.totalUSD is incorrect, if any. 
 
 SELECT *
 FROM orders o INNER JOIN products p ON o.pid = p.pid
               INNER JOIN customers c ON o.cid = c.cid
 WHERE totalusd != qty * p.priceUSD * (1 - (discount / 100));
 
---7. What’s the difference between a LEFT OUTER JOIN and a RIGHT OUTER JOIN? Give 
+-- 7. What’s the difference between a LEFT OUTER JOIN and a RIGHT OUTER JOIN? Give 
 -- example queries in SQL to demonstrate. (Feel free to use the CAP2 database to make 
 -- your points here.)
 
