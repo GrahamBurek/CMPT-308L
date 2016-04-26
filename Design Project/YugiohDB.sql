@@ -67,7 +67,7 @@ CREATE TABLE Tournament
 tid INT NOT NULL UNIQUE,
 tournament_name TEXT NOT NULL,
 tournament_date DATE NOT NULL CHECK(tournament_date > now()),
-vid INT NOT NULL UNIQUE references Venue(vid),
+vid INT NOT NULL references Venue(vid),
 PRIMARY KEY(tid)
 );
 
@@ -675,7 +675,7 @@ CREATE TRIGGER checkSideDeckLegality
 DROP TRIGGER IF EXISTS check_deck_size ON Runs;
 
 CREATE TRIGGER check_deck_size
-    BEFORE UPDATE OR INSERT ON Runs
+    BEFORE UPDATE OR INSERT OR DELETE ON Runs
     FOR EACH ROW
     EXECUTE PROCEDURE check_deck_size();
 
