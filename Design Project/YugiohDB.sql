@@ -1,5 +1,24 @@
 -- SQL For YugiohDB. Author: Graham Burek --
 
+-- Clear database before script execution: --
+DROP VIEW IF EXISTS MonsterCardView;
+DROP VIEW IF EXISTS SpellCardView;
+DROP VIEW IF EXISTS TrapCardView;
+DROP TABLE IF EXISTS MonsterCard;
+DROP TABLE IF EXISTS SpellCard;
+DROP TABLE IF EXISTS TrapCard;
+DROP TABLE IF EXISTS Duel;
+DROP TABLE IF EXISTS Runs;
+DROP TABLE IF EXISTS Registration;
+DROP TABLE IF EXISTS Player;
+DROP TABLE IF EXISTS SideDeck_Card;
+DROP TABLE IF EXISTS Deck_Card;
+DROP TABLE IF EXISTS Card;
+DROP TABLE IF EXISTS Deck;
+DROP TABLE IF EXISTS SideDeck;
+DROP TABLE IF EXISTS Tournament;
+DROP TABLE IF EXISTS Venue;
+DROP TABLE IF EXISTS Places;
 
 ----------- Create statements: ------------
 CREATE TABLE Player
@@ -491,6 +510,31 @@ INSERT INTO TrapCard(cid,trap_type) VALUES
 
 --------------- Triggers ----------------
 
+DROP FUNCTION IF EXISTS checkLegality();
+DROP FUNCTION IF EXISTS check_deck_size();
+DROP FUNCTION IF EXISTS check_side_deck_size();
+DROP FUNCTION IF EXISTS check_dueling_players();
+DROP FUNCTION IF EXISTS check_card_type_monster();
+DROP FUNCTION IF EXISTS check_card_type_spell();
+DROP FUNCTION IF EXISTS check_card_type_trap();
+
+-- Checks if a forbidden card would be inserted into a deck, and prevents it.
+CREATE OR REPLACE FUNCTION checkLegality() RETURNS trigger AS
+$$
+DECLARE
+    currentRecord text;
+BEGIN
+    FOR currentRecord IN SELECT legality FROM Card WHERE NEW.cid = Card.cid LOOP
+        IF  currentRecord = 'forbidden' THEN
+            RAISE NOTICE 'Cid % is a forbidden card and cant be used.',NEW.cid;
+            RETURN NULL;
+        END IF;
+    END LOOP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Checks if a deck is too large or small to be used in a tournament. --
 CREATE OR REPLACE FUNCTION check_deck_size() RETURNS trigger AS
 $$
 DECLARE
@@ -515,6 +559,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Checks if a side deck is too big to be run alongside a deck. --
 CREATE OR REPLACE FUNCTION check_side_deck_size() RETURNS trigger AS
 $$
 DECLARE
@@ -536,6 +581,97 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Checks to make sure that players are registered for a tournament they duel in, and are not dueling themselves. --
+CREATE OR REPLACE FUNCTION check_dueling_players() RETURNS trigger AS
+$$
+BEGIN
+    IF NEW.player_1_pid = NEW.player_2_pid THEN
+        RAISE NOTICE 'A player cannot duel his or herself!';
+        RETURN NULL;
+    ELSIF NEW.player_1_pid NOT IN(SELECT pid FROM Registration WHERE NEW.tid = Registration.tid) THEN
+        RAISE NOTICE 'Player 1 is not registered for that tournament.';
+        RETURN NULL;
+    ELSIF NEW.player_2_pid NOT IN(SELECT pid FROM Registration WHERE NEW.tid = Registration.tid) THEN
+        RAISE NOTICE 'Player 2 is not registered for that tournament.';
+        RETURN NULL;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION check_card_type_monster() RETURNS trigger AS
+$$
+DECLARE
+    multitypeCards integer;
+BEGIN
+    SELECT count(*) INTO multitypeCards FROM SpellCard, TrapCard
+    WHERE NEW.cid = SpellCard.cid
+    OR NEW.cid = TrapCard.cid;
+
+    --RAISE NOTICE 'multitype cards: %', multitypeCards;
+    IF multitypeCards > 0 THEN
+        RAISE NOTICE 'Card is already a trap or spell.';
+        RETURN NULL;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION check_card_type_spell() RETURNS trigger AS
+$$
+DECLARE
+    multitypeCards integer;
+BEGIN
+    SELECT count(*) INTO multitypeCards FROM MonsterCard, TrapCard
+    WHERE NEW.cid = MonsterCard.cid
+    OR NEW.cid = TrapCard.cid;
+
+    --RAISE NOTICE 'multitype cards: %', multitypeCards;
+    IF multitypeCards > 0 THEN
+        RAISE NOTICE 'Card is already a monster or trap.';
+        RETURN NULL;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION check_card_type_trap() RETURNS trigger AS
+$$
+DECLARE
+    multitypeCards integer;
+BEGIN
+    SELECT count(*) INTO multitypeCards FROM MonsterCard, SpellCard
+    WHERE NEW.cid = MonsterCard.cid
+    OR NEW.cid = SpellCard.cid;
+
+    --RAISE NOTICE 'multitype cards: %', multitypeCards;
+    IF multitypeCards > 0 THEN
+        RAISE NOTICE 'Card is already a monster or spell.';
+        RETURN NULL;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS checkDeckLegality ON Deck_Card;
+
+CREATE TRIGGER checkDeckLegality
+    BEFORE UPDATE OR INSERT ON Deck_Card
+    FOR EACH ROW
+    EXECUTE PROCEDURE checkLegality();
+
+DROP TRIGGER IF EXISTS checkSideDeckLegality ON SideDeck_Card;
+
+CREATE TRIGGER checkSideDeckLegality
+    BEFORE UPDATE OR INSERT ON SideDeck_Card
+    FOR EACH ROW
+    EXECUTE PROCEDURE checkLegality();
+
+
 DROP TRIGGER IF EXISTS check_deck_size ON Runs;
 
 CREATE TRIGGER check_deck_size
@@ -543,9 +679,212 @@ CREATE TRIGGER check_deck_size
     FOR EACH ROW
     EXECUTE PROCEDURE check_deck_size();
 
-DROP TRIGGER IF EXISTS check_side_deck_size ON Runs;
+DROP TRIGGER IF EXISTS check_side_deck_size ON Deck;
 
 CREATE TRIGGER check_side_deck_size
     BEFORE UPDATE OR INSERT ON Deck
     FOR EACH ROW
     EXECUTE PROCEDURE check_side_deck_size();
+
+DROP TRIGGER IF EXISTS check_dueling_players ON Duel;
+
+CREATE TRIGGER check_dueling_players
+    BEFORE UPDATE OR INSERT ON Duel
+    FOR EACH ROW
+    EXECUTE PROCEDURE check_dueling_players();
+
+DROP TRIGGER IF EXISTS check_card_type_monster ON Duel;
+
+CREATE TRIGGER check_card_type_monster
+    BEFORE UPDATE OR INSERT ON MonsterCard
+    FOR EACH ROW
+    EXECUTE PROCEDURE check_card_type_monster();
+
+DROP TRIGGER IF EXISTS check_card_type_spell ON Duel;
+
+CREATE TRIGGER check_card_type_spell
+    BEFORE UPDATE OR INSERT ON SpellCard
+    FOR EACH ROW
+    EXECUTE PROCEDURE check_card_type_spell();
+
+DROP TRIGGER IF EXISTS check_card_type_trap ON Duel;
+
+CREATE TRIGGER check_card_type_trap
+    BEFORE UPDATE OR INSERT ON TrapCard
+    FOR EACH ROW
+    EXECUTE PROCEDURE check_card_type_trap();
+
+---------- Views --------------
+
+CREATE VIEW MonsterCardView AS 
+    SELECT Card.cid,card_name,flavor_text,legality,star_level,hasEffect,attack,defense,attribute,monster_type
+    FROM Card, MonsterCard
+    WHERE MonsterCard.cid = Card.cid;
+
+CREATE VIEW SpellCardView AS
+    SELECT Card.cid,card_name,flavor_text,legality,spell_type
+    FROM Card, SpellCard
+    WHERE SpellCard.cid = Card.cid;
+
+CREATE VIEW TrapCardView AS
+    SELECT Card.cid,card_name,flavor_text,legality,trap_type
+    FROM Card, TrapCard
+    WHERE TrapCard.cid = Card.cid;
+
+--------- Stored Procedures ----------
+
+-- Gets the cards in a deck by cid --
+DROP FUNCTION IF EXISTS getCardsInDeck(integer);
+
+CREATE OR REPLACE FUNCTION getCardsInDeck(integer) RETURNS TABLE(card_name TEXT, qty INTEGER) AS
+$$
+DECLARE
+    deckID ALIAS FOR $1;
+BEGIN
+     RETURN QUERY
+     SELECT Card.card_name, Deck_Card.qty
+     FROM Card, Deck, Deck_Card
+     WHERE Card.cid = Deck_Card.cid
+     AND Deck.did = Deck_Card.did
+     AND Deck.did = deckID;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Gets the cards in a side deck by cid --
+DROP FUNCTION IF EXISTS getCardsInSideDeck(integer);
+
+CREATE OR REPLACE FUNCTION getCardsInSideDeck(integer) RETURNS TABLE(card_name TEXT, qty INTEGER)  AS
+$$
+DECLARE
+    sideDeckID ALIAS FOR $1;
+BEGIN
+     RETURN QUERY
+     SELECT Card.card_name, SideDeck_Card.qty
+     FROM Card, SideDeck, SideDeck_Card
+     WHERE Card.cid = SideDeck_Card.cid
+     AND SideDeck.sdid = SideDeck_Card.sdid
+     AND SideDeck.sdid = sideDeckID;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Gets tournaments a player has registered for --
+DROP FUNCTION IF EXISTS getTournaments(integer);
+
+CREATE OR REPLACE FUNCTION getTournaments(integer) RETURNS TABLE(tournament_name TEXT) AS
+$$
+DECLARE
+    playerID ALIAS FOR $1;
+BEGIN
+     RETURN QUERY
+     SELECT Tournament.tournament_name
+     FROM Tournament, Player, Registration
+     WHERE Tournament.tid = Registration.tid
+     AND Player.pid = Registration.pid
+     AND Player.pid = playerID;
+END;
+$$ LANGUAGE plpgsql;
+
+------------ Reports ------------------
+
+-- Show most used cards in decks --
+SELECT card_name, count(card_name) AS occurences
+FROM Deck, Card, Deck_Card
+WHERE Deck.did = Deck_Card.did
+AND Deck_Card.cid = Card.cid
+GROUP BY card_name
+ORDER BY occurences DESC;
+
+-- Show all players registered for a tournament. --
+SELECT player_name
+FROM Player, Registration,Tournament
+WHERE Player.pid = Registration.pid
+AND Tournament.tid = Registration.tid
+AND Tournament.tid = 1;-- <--tournament id here 
+
+------------ Security ----------
+
+DROP ROLE CheckIn;
+DROP ROLE Admin;
+DROP ROLE Judge;
+
+CREATE ROLE CheckIn;
+CREATE ROLE Admin;
+CREATE ROLE Judge;
+
+REVOKE ALL PRIVILEGES ON Duel FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Player FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Registration FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Tournament FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Places FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Runs FROM CheckIn;
+REVOKE ALL PRIVILEGES ON SideDeck FROM CheckIn;
+REVOKE ALL PRIVILEGES ON SideDeck_Card FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Venue FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Deck FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Deck_Card FROM CheckIn;
+REVOKE ALL PRIVILEGES ON Card FROM CheckIn;
+REVOKE ALL PRIVILEGES ON MonsterCard FROM CheckIn;
+REVOKE ALL PRIVILEGES ON SpellCard FROM CheckIn;
+REVOKE ALL PRIVILEGES ON TrapCard FROM CheckIn;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON Registration TO CheckIn;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Player TO CheckIn;
+GRANT SELECT ON Tournament TO CheckIn;
+
+REVOKE ALL PRIVILEGES ON Duel FROM Judge;
+REVOKE ALL PRIVILEGES ON Player FROM Judge;
+REVOKE ALL PRIVILEGES ON Registration FROM Judge;
+REVOKE ALL PRIVILEGES ON Tournament FROM Judge;
+REVOKE ALL PRIVILEGES ON Places FROM Judge;
+REVOKE ALL PRIVILEGES ON Runs FROM Judge;
+REVOKE ALL PRIVILEGES ON SideDeck FROM Judge;
+REVOKE ALL PRIVILEGES ON SideDeck_Card FROM Judge;
+REVOKE ALL PRIVILEGES ON Venue FROM Judge;
+REVOKE ALL PRIVILEGES ON Deck FROM Judge;
+REVOKE ALL PRIVILEGES ON Deck_Card FROM Judge;
+REVOKE ALL PRIVILEGES ON Card FROM Judge;
+REVOKE ALL PRIVILEGES ON MonsterCard FROM Judge;
+REVOKE ALL PRIVILEGES ON SpellCard FROM Judge;
+REVOKE ALL PRIVILEGES ON TrapCard FROM Judge;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON Duel TO Judge;
+GRANT SELECT, DELETE ON Player TO Judge;
+GRANT SELECT ON Registration TO Judge;
+GRANT SELECT, DELETE ON Runs TO Judge;
+GRANT SELECT ON SideDeck TO Judge;
+GRANT SELECT ON SideDeck_Card TO Judge;
+GRANT SELECT ON Deck TO Judge;
+GRANT SELECT ON Deck_Card TO Judge;
+GRANT SELECT ON Card TO Judge;
+
+REVOKE ALL PRIVILEGES ON Duel FROM Admin;
+REVOKE ALL PRIVILEGES ON Player FROM Admin;
+REVOKE ALL PRIVILEGES ON Registration FROM Admin;
+REVOKE ALL PRIVILEGES ON Tournament FROM Admin;
+REVOKE ALL PRIVILEGES ON Places FROM Admin;
+REVOKE ALL PRIVILEGES ON Runs FROM Admin;
+REVOKE ALL PRIVILEGES ON SideDeck FROM Admin;
+REVOKE ALL PRIVILEGES ON SideDeck_Card FROM Admin;
+REVOKE ALL PRIVILEGES ON Venue FROM Admin;
+REVOKE ALL PRIVILEGES ON Deck FROM Admin;
+REVOKE ALL PRIVILEGES ON Deck_Card FROM Admin;
+REVOKE ALL PRIVILEGES ON Card FROM Admin;
+REVOKE ALL PRIVILEGES ON MonsterCard FROM Admin;
+REVOKE ALL PRIVILEGES ON SpellCard FROM Admin;
+REVOKE ALL PRIVILEGES ON TrapCard FROM Admin;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON Duel TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Player TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Registration TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Tournament TO Admin;  
+GRANT SELECT, INSERT, UPDATE, DELETE ON Places TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Runs TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON SideDeck TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON SideDeck_Card TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Venue TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Deck TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Deck_Card TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON Card TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON MonsterCard TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON SpellCard TO Admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TrapCard TO Admin;
